@@ -5,10 +5,12 @@ export async function getCategories(): Promise<Category[]> {
   try {
     const pages = [1, 2, 3, 4, 5];
     const results = await Promise.all(
-      pages.map(page => 
+      pages.map(page =>
         fetchStoreApi<any[]>(`products/categories?per_page=100&page=${page}`).catch(() => ({ data: [] }))
       )
     );
+    console.log("categories:", results);
+
 
     const allData = results.flatMap(result => result.data || []);
 

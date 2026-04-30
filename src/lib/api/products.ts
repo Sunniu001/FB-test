@@ -1,5 +1,6 @@
 import { fetchStoreApi, wcFetch } from "./client";
 import { Product } from "@/types/product";
+import { STORE_URL } from "./client";
 
 function normalizeStoreProduct(raw: any): Product {
   const minorUnit = raw.prices?.currency_minor_unit || 2;
@@ -33,6 +34,7 @@ export async function getProducts(options: { limit?: number } = {}): Promise<Pro
   try {
     const limit = options.limit || 20;
     const { data } = await fetchStoreApi<any[]>(`products?per_page=${limit}`);
+    console.log("products:", data);
     return data.map(normalizeStoreProduct);
   } catch (error) {
     console.error("Failed to fetch products:", error);
@@ -46,23 +48,23 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
     if (!data || !data.length) return null;
     const rawData = data[0];
     const product = normalizeStoreProduct(rawData);
-    
+
     // Fetch variations using wc/v3 API to get prices, as Store API doesn't include variation prices
     if (rawData.has_options && rawData.variations && rawData.variations.length > 0) {
       try {
         const variationsResponses = await Promise.all(
           rawData.variations.map((v: any) => wcFetch(`products/${product.id}/variations/${v.id}`))
         );
-        
+
         const uniqueVariants = new Map<string, any>();
-        
+
         variationsResponses.forEach(rawVar => {
           // Create a unique key based on all attributes
           const attrKey = (rawVar.attributes || [])
             .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
             .map((attr: any) => `${attr.name}:${attr.option}`)
             .join('|');
-            
+
           if (!uniqueVariants.has(attrKey)) {
             uniqueVariants.set(attrKey, {
               id: rawVar.id,
@@ -78,13 +80,13 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
             });
           }
         });
-        
+
         product.variants = Array.from(uniqueVariants.values());
       } catch (varError) {
         console.error(`Failed to fetch variations for product ${product.id}:`, varError);
       }
     }
-    
+
     // Fetch Nameplate metadata
     const isNameplate = product.categories.some((c: any) => (c.slug || '').includes('nameplate') || (c.name || '').toLowerCase().includes('nameplate'));
     if (isNameplate) {
@@ -94,7 +96,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
         const boxMeta = metaData.find((m: any) => m.key === '_np_box')?.value;
         const bgMeta = metaData.find((m: any) => m.key === '_np_bg')?.value;
         const textColorMeta = metaData.find((m: any) => m.key === '_np_text_color')?.value;
-        
+
         if (boxMeta && bgMeta) {
           const [x, y, w, h] = boxMeta.split(',').map(Number);
           product.nameplateMeta = {
@@ -107,7 +109,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
         console.error(`Failed to fetch nameplate meta for product ${product.id}:`, error);
       }
     }
-    
+
     return product;
   } catch (error) {
     console.error(`Failed to fetch product ${slug}:`, error);
@@ -132,7 +134,7 @@ export async function getProductsByCategory(
     // Store API v1 orderby supports: date, id, include, name, parent, slug, title, menu_order
     // 'price' might not be supported in all environments/versions directly as orderby
     let sortParams = `&orderby=${orderby}&order=${order}`;
-    
+
     // If it's price sorting, we keep it but ensure it's handled. 
     // If the API returns error for 'price', it will hit the catch block.
     // Use encoded category ID or slug
@@ -140,7 +142,8 @@ export async function getProductsByCategory(
     const { data, headers } = await fetchStoreApi<any[]>(
       `products?category=${encodedCat}&page=${page}&per_page=${perPage}${sortParams}`
     );
-    
+    console.log("products data:", data, "url:", STORE_URL?.endsWith('/') ? STORE_URL.slice(0, -1) : STORE_URL);
+
     const total = parseInt(headers.get('x-wp-total') || '0');
     const totalPages = parseInt(headers.get('x-wp-totalpages') || '0');
 
@@ -153,8 +156,8 @@ export async function getProductsByCategory(
     console.error(`Failed to fetch products for category ${categoryId}:`, error);
     // Fallback attempt without sorting if it failed
     try {
-       const encodedCat = encodeURIComponent(categoryId);
-       const { data, headers } = await fetchStoreApi<any[]>(
+      const encodedCat = encodeURIComponent(categoryId);
+      const { data, headers } = await fetchStoreApi<any[]>(
         `products?category=${encodedCat}&page=${page}&per_page=${perPage}`
       );
       const total = parseInt(headers.get('x-wp-total') || '0');

@@ -26,6 +26,7 @@ export default async function CategoryPage({
   try {
     const { wcFetch } = await import("@/lib/api/client");
     const catSearch = await wcFetch(`products/categories?slug=${decodedSlug}`);
+    console.log("products from page.tsx", catSearch);
     if (catSearch && catSearch.length > 0) {
       const cat = catSearch[0];
       currentCategory = {
