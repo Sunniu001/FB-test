@@ -46,7 +46,8 @@ export default async function CategoryPage({
     currentCategory = categories.find((c) => c.slug === slug || c.slug === decodedSlug);
   }
 
-  // Strategy 3: Product-based discovery
+  // Strategy 3: Product-based discovery (DISABLED - CAUSING HIJACKS ON VERCEL)
+  /*
   if (!currentCategory) {
     try {
       const { fetchStoreApi } = await import("@/lib/api/client");
@@ -62,17 +63,24 @@ export default async function CategoryPage({
             parent: catData.parent || 0,
             image: undefined,
           };
-        } else {
-          console.warn(`Category discovery returned product but no matching category for slug: ${decodedSlug}`);
         }
       }
     } catch (e) {
       console.error("Product-based discovery failed:", e);
     }
   }
+  */
 
   if (!currentCategory) {
-    notFound();
+    return (
+      <div style={{ padding: "100px 20px", textAlign: "center" }}>
+        <h1 style={{ fontFamily: "var(--font-serif)" }}>Category Not Found</h1>
+        <p style={{ color: "#666", marginTop: "20px" }}>Requested Slug: {slug}</p>
+        <p style={{ color: "#999", fontSize: "12px" }}>API_URL: {process.env.NEXT_PUBLIC_WC_API_URL || "MISSING"}</p>
+        <p style={{ color: "#999", fontSize: "12px" }}>STORE_URL: {process.env.NEXT_PUBLIC_WC_STORE_URL || "MISSING"}</p>
+        <Link href="/" style={{ marginTop: "40px", display: "inline-block", color: "#8FA899" }}>Return Home</Link>
+      </div>
+    );
   }
 
   // Check for child categories
