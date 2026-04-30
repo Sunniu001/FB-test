@@ -125,12 +125,18 @@ export async function getProductsByCategory(
   categoryId: string,
   page: number = 1,
   perPage: number = 20,
-  orderby: string = 'price',
-  order: string = 'asc'
+  orderby: string = 'date',
+  order: string = 'desc'
 ): Promise<PaginatedProducts> {
   try {
+    // Store API v1 orderby supports: date, id, include, name, parent, slug, title, menu_order
+    // 'price' might not be supported in all environments/versions directly as orderby
+    let sortParams = `&orderby=${orderby}&order=${order}`;
+    
+    // If it's price sorting, we keep it but ensure it's handled. 
+    // If the API returns error for 'price', it will hit the catch block.
     const { data, headers } = await fetchStoreApi<any[]>(
-      `products?category=${categoryId}&page=${page}&per_page=${perPage}&orderby=${orderby}&order=${order}`
+      `products?category=${categoryId}&page=${page}&per_page=${perPage}${sortParams}`
     );
     
     const total = parseInt(headers.get('x-wp-total') || '0');
@@ -143,7 +149,21 @@ export async function getProductsByCategory(
     };
   } catch (error) {
     console.error(`Failed to fetch products for category ${categoryId}:`, error);
-    return { products: [], total: 0, totalPages: 0 };
+    // Fallback attempt without sorting if it failed
+    try {
+       const { data, headers } = await fetchStoreApi<any[]>(
+        `products?category=${categoryId}&page=${page}&per_page=${perPage}`
+      );
+      const total = parseInt(headers.get('x-wp-total') || '0');
+      const totalPages = parseInt(headers.get('x-wp-totalpages') || '0');
+      return {
+        products: data.map(normalizeStoreProduct),
+        total,
+        totalPages
+      };
+    } catch (e) {
+      return { products: [], total: 0, totalPages: 0 };
+    }
   }
 }
 

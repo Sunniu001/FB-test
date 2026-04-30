@@ -32,6 +32,7 @@ export async function fetchStoreApi<T>(
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'User-Agent': 'FirstRoom-NextJS/1.0',
     ...(cartToken ? { 'Cart-Token': cartToken } : {}),
     ...(nonce ? { 'Nonce': nonce } : {}),
     ...options?.headers,

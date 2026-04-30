@@ -71,13 +71,14 @@ export default async function CategoryPage({
   const subcategories = categories.filter((c) => c.parent === currentCategory.id);
 
   // Sorting logic
-  let orderby = 'price';
-  let order = 'asc';
+  let orderby = 'date';
+  let order = 'desc';
   switch (sortParam) {
+    case 'price_asc': orderby = 'price'; order = 'asc'; break;
     case 'price_desc': orderby = 'price'; order = 'desc'; break;
     case 'popularity': orderby = 'popularity'; order = 'desc'; break;
     case 'date': orderby = 'date'; order = 'desc'; break;
-    default: orderby = 'price'; order = 'asc';
+    default: orderby = 'date'; order = 'desc';
   }
 
   // Fetch products (Always, for both leaf and parent categories)
