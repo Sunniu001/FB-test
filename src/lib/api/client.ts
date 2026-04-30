@@ -2,7 +2,8 @@ export const API_URL = process.env.NEXT_PUBLIC_WC_API_URL;
 export const STORE_URL = process.env.NEXT_PUBLIC_WC_STORE_URL;
 
 export async function wcFetch(endpoint: string) {
-  const url = `${API_URL}/${endpoint}`;
+  const cleanBaseUrl = API_URL?.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+  const url = `${cleanBaseUrl}/${endpoint}`;
   const res = await fetch(url, {
     next: { revalidate: 120 },
   });
@@ -27,7 +28,8 @@ export async function fetchStoreApi<T>(
   options?: RequestInit,
   nonce?: string | null
 ): Promise<{ data: T; cartToken: string | null; nonce: string | null; headers: Headers }> {
-  const url = `${STORE_URL}/wp-json/wc/store/v1/${endpoint}`;
+  const cleanBaseUrl = STORE_URL?.endsWith('/') ? STORE_URL.slice(0, -1) : STORE_URL;
+  const url = `${cleanBaseUrl}/wp-json/wc/store/v1/${endpoint}`;
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',

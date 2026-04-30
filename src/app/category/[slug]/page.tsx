@@ -83,7 +83,7 @@ export default async function CategoryPage({
 
   // Fetch products (Always, for both leaf and parent categories)
   const { products, totalPages } = await getProductsByCategory(
-    currentCategory.id.toString(), 
+    slug, 
     currentPage, 
     20,
     orderby,

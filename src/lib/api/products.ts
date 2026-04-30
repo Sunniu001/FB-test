@@ -135,15 +135,17 @@ export async function getProductsByCategory(
     
     // If it's price sorting, we keep it but ensure it's handled. 
     // If the API returns error for 'price', it will hit the catch block.
+    // Use encoded category ID or slug
+    const encodedCat = encodeURIComponent(categoryId);
     const { data, headers } = await fetchStoreApi<any[]>(
-      `products?category=${categoryId}&page=${page}&per_page=${perPage}${sortParams}`
+      `products?category=${encodedCat}&page=${page}&per_page=${perPage}${sortParams}`
     );
     
     const total = parseInt(headers.get('x-wp-total') || '0');
     const totalPages = parseInt(headers.get('x-wp-totalpages') || '0');
 
     return {
-      products: data.map(normalizeStoreProduct),
+      products: Array.isArray(data) ? data.map(normalizeStoreProduct) : [],
       total,
       totalPages
     };
@@ -151,13 +153,14 @@ export async function getProductsByCategory(
     console.error(`Failed to fetch products for category ${categoryId}:`, error);
     // Fallback attempt without sorting if it failed
     try {
+       const encodedCat = encodeURIComponent(categoryId);
        const { data, headers } = await fetchStoreApi<any[]>(
-        `products?category=${categoryId}&page=${page}&per_page=${perPage}`
+        `products?category=${encodedCat}&page=${page}&per_page=${perPage}`
       );
       const total = parseInt(headers.get('x-wp-total') || '0');
       const totalPages = parseInt(headers.get('x-wp-totalpages') || '0');
       return {
-        products: data.map(normalizeStoreProduct),
+        products: Array.isArray(data) ? data.map(normalizeStoreProduct) : [],
         total,
         totalPages
       };
