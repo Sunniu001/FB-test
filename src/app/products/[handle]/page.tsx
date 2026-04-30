@@ -1,4 +1,5 @@
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 import React from 'react';
 import { getProductBySlug, getProducts } from '@/lib/api/products';
 import { ProductActions } from '@/components/ProductActions/ProductActions';
@@ -12,12 +13,6 @@ import { notFound } from 'next/navigation';
 import styles from './page.module.css';
 import { Product, NormalizedProduct } from '@/types/product';
 
-export async function generateStaticParams() {
-  const products = await getProducts({ limit: 100 });
-  return products.map((product) => ({
-    handle: product.slug,
-  }));
-}
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;
