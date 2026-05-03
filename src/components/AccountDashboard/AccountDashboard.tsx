@@ -285,7 +285,7 @@ export const AccountDashboard: React.FC = () => {
                 <thead>
                   <tr>
                     <th>PRODUCTS</th>
-                    <th>QUANTITY</th>
+                    <th>{orderTypeTab === 'wallpaper' ? 'SIZE IN SQ FEET' : 'QUANTITY'}</th>
                     <th>PRICE</th>
                     <th>STATUS</th>
                   </tr>
@@ -329,9 +329,10 @@ export const AccountDashboard: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td data-label="Quantity">
-                          {/* Hide quantity for wallpapers in order history to avoid confusion */}
-                          {(item.meta_data?.some(m => m.key.toLowerCase() === 'area') || (item.sku && item.sku.startsWith('FMWPAR'))) ? '-' : item.quantity}
+                        <td data-label={orderTypeTab === 'wallpaper' ? 'Size' : 'Quantity'}>
+                          {orderTypeTab === 'wallpaper' ? (
+                            item.meta_data?.find(m => ['area', 'sqft'].includes(m.key.toLowerCase()))?.value || '-'
+                          ) : item.quantity}
                         </td>
                         <td data-label="Price">{order.currency_symbol}{parseFloat(item.total).toLocaleString('en-IN')}</td>
                         <td data-label="Status">
