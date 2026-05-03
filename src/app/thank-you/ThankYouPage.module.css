@@ -287,7 +287,50 @@
 }
 
 @media (max-width: 600px) {
-  .cardHeader { flex-direction: column; gap: 0.5rem; }
-  .actions { flex-direction: column; }
-  .itemRow { gap: 1rem; }
+  .heroWrapper {
+    height: 150px;
+    margin-bottom: 2rem;
+  }
+
+  .container {
+    padding: 0 1rem 3rem;
+  }
+
+  .title {
+    font-size: 1.5rem;
+  }
+
+  .orderCard {
+    padding: 1rem 1.25rem;
+  }
+
+  .cardHeader { 
+    flex-direction: column; 
+    gap: 0.5rem; 
+    align-items: flex-start;
+  }
+
+  .actions { 
+    flex-direction: column; 
+    gap: 1rem;
+  }
+
+  .primaryBtn, .secondaryBtn {
+    width: 100%;
+    padding: 0.85rem;
+  }
+
+  .itemRow { 
+    gap: 1rem; 
+    align-items: flex-start;
+  }
+
+  .itemImage {
+    width: 60px;
+    height: 60px;
+  }
+
+  .itemName {
+    font-size: 0.85rem;
+  }
 }

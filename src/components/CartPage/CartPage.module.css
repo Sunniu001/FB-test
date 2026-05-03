@@ -292,6 +292,80 @@
   cursor: not-allowed;
 }
 
+@media (max-width: 600px) {
+  .cartContainer {
+    padding: 2rem 1rem;
+  }
+
+  .tableHeader {
+    display: none;
+  }
+
+  .cartItemRow {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1.5rem 0;
+    position: relative;
+  }
+
+  .checkboxCol {
+    position: absolute;
+    top: 1.5rem;
+    left: 0;
+    z-index: 1;
+  }
+
+  .productCol {
+    padding-left: 2rem;
+    gap: 1rem;
+  }
+
+  .productImage {
+    width: 70px;
+    height: 70px;
+  }
+
+  .productName {
+    font-size: 1rem;
+  }
+
+  .priceCol, .quantityCol, .subtotalCol {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-left: 2rem;
+    font-size: 0.9rem;
+  }
+
+  .priceCol::before {
+    content: "Price:";
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .quantityCol::before {
+    content: "Quantity:";
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .subtotalCol::before {
+    content: "Subtotal:";
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .totalsSidebar {
+    padding: 1.5rem;
+  }
+}
+
 .sqftQty {
   font-size: 0.9rem;
   font-weight: 500;

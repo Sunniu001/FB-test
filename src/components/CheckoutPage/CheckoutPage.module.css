@@ -75,6 +75,15 @@
   .itemQtyPrice {
     font-size: 0.75rem;
   }
+
+  .itemName {
+    font-size: 0.85rem;
+    white-space: normal;
+  }
+  
+  .orderItem {
+    padding: 0.75rem 0;
+  }
 }
 
 .formGroupFull {

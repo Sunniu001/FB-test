@@ -355,25 +355,27 @@
 
 @media (max-width: 480px) {
   .drawer {
+    width: 100vw;
     max-width: 100%;
   }
 
   .header {
-    padding: 12px 15px;
+    padding: 15px 16px;
   }
 
   .cartItem {
-    padding: 12px 15px;
+    padding: 16px;
     gap: 12px;
   }
 
   .itemImageWrapper {
-    width: 60px;
-    height: 70px;
+    width: 80px;
+    height: 90px;
   }
 
   .itemName {
-    font-size: 0.88rem;
+    font-size: 0.9rem;
+    line-height: 1.3;
   }
 
   .itemPrice, .itemTotal {
@@ -382,22 +384,29 @@
 
   .actions {
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 
   .checkoutBtn, .viewCartBtn {
-    height: 48px; /* Slightly taller for better touch */
+    height: 48px;
+    font-size: 0.9rem;
   }
 
   .footer {
-    padding: 12px 15px;
+    padding: 16px;
+  }
+  
+  .trustBadges {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
+
 .sqftQty {
   font-size: 0.9rem;
   font-weight: 500;
   color: #333;
-  padding: 4px 8px;
+  padding: 4px 0;
 }
 
 .priceUnit {

@@ -255,7 +255,99 @@
   cursor: not-allowed;
 }
 
-.empty {
-  color: var(--text-secondary);
-  margin-bottom: 2rem;
+@media (max-width: 768px) {
+  .container {
+    padding: 2rem 1rem;
+  }
+
+  .pageTitle {
+    font-size: 1.5rem;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .row {
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem 0;
+    position: relative;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .row td {
+    padding: 0.5rem 0;
+    border: none;
+  }
+
+  .tdCheck {
+    position: absolute;
+    top: 1.5rem;
+    left: 0;
+    width: auto;
+  }
+
+  .tdProduct {
+    padding-left: 1.75rem !important;
+  }
+
+  .productLink {
+    gap: 0.75rem;
+  }
+
+  .productImage {
+    width: 60px;
+    height: 60px;
+  }
+
+  .productName {
+    font-size: 0.9rem;
+  }
+
+  .tdPrice, .tdStock, .tdAction {
+    padding-left: 1.75rem !important;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .tdPrice::before {
+    content: "Price:";
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .tdStock::before {
+    content: "Stock:";
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .tdAction {
+    margin-top: 0.5rem;
+  }
+
+  .addToCartBtn {
+    width: 100%;
+    padding: 0.75rem;
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .footerBtns {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .footerBtn {
+    width: 100%;
+  }
 }
