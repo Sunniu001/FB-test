@@ -31,24 +31,36 @@ export const LoginModal: React.FC = () => {
     setError(null);
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: form.email, password: form.password }),
+      const result = await nextAuthSignIn('credentials', {
+        email: form.email,
+        password: form.password,
+        redirect: false,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Login failed.');
-      setUser({
-        id: data.id,
-        email: data.user_email,
-        firstName: data.first_name,
-        lastName: data.last_name,
-        displayName: data.user_display_name,
-        token: data.token,
-      });
+
+      if (result?.error) {
+        throw new Error('Invalid email or password.');
+      }
+
+      // 1. Get the session to populate our Zustand store immediately
+      const sessionRes = await fetch('/api/auth/session');
+      if (sessionRes.ok) {
+        const session = await sessionRes.json();
+        if (session.user) {
+          setUser({
+            id: session.wpId,
+            email: session.user.email,
+            firstName: session.wpFirstName,
+            lastName: session.wpLastName,
+            displayName: session.user.name,
+            token: session.wpToken,
+          });
+        }
+      }
+
       closeLoginModal();
+      router.refresh();
     } catch (err: any) {
-      setError(err.message?.replace(/<[^>]+>/g, '') || 'Login failed. Check your credentials.');
+      setError(err.message || 'Login failed. Check your credentials.');
     } finally {
       setIsLoading(false);
     }

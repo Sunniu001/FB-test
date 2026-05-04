@@ -60,10 +60,10 @@ export const Footer: React.FC = () => {
           <div className={styles.column}>
             <h4 className={styles.heading}>INFORMATION</h4>
             <ul className={styles.list}>
-              <li><Link href="/terms" className={styles.link}>TERMS & CONDITIONS</Link></li>
-              <li><Link href="/privacy" className={styles.link}>PRIVACY POLICY</Link></li>
-              <li><Link href="/shipping" className={styles.link}>SHIPPING POLICY</Link></li>
-              <li><Link href="/refund" className={styles.link}>REFUND POLICY</Link></li>
+              <li><Link href="/terms-and-conditions" className={styles.link}>TERMS AND CONDITIONS</Link></li>
+              <li><Link href="/privacy-policy" className={styles.link}>PRIVACY POLICY</Link></li>
+              <li><Link href="/shipping-payment-policy" className={styles.link}>SHIPPING & PAYMENT POLICY</Link></li>
+              <li><Link href="/return-exchange-policy" className={styles.link}>RETURN & EXCHANGE POLICY</Link></li>
             </ul>
           </div>
 

@@ -15,6 +15,8 @@ export const SearchDrawer: React.FC<SearchDrawerProps> = ({ isOpen, onClose }) =
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'products' | 'articles'>('products');
+  const [articles, setArticles] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -24,81 +26,35 @@ export const SearchDrawer: React.FC<SearchDrawerProps> = ({ isOpen, onClose }) =
   }, [isOpen]);
 
   useEffect(() => {
-    const searchProducts = async () => {
+    const performSearch = async () => {
       const trimmedQuery = query.trim();
       if (trimmedQuery.length < 2) {
         setResults([]);
+        setArticles([]);
         return;
       }
 
       setIsLoading(true);
       try {
-        // Strategy 1: Full Phrase Search
-        const endpoint = `products?search=${encodeURIComponent(trimmedQuery)}&per_page=10`;
-        const { data } = await fetchStoreApi<any>(endpoint);
-        let products = Array.isArray(data) ? data : (data?.data || []);
-        
-        // Strategy 2: If no results and multiple words, try searching for the first word
-        if (products.length === 0 && trimmedQuery.includes(' ')) {
-          const firstWord = trimmedQuery.split(' ')[0];
-          const firstWordRes = await fetchStoreApi<any>(`products?search=${encodeURIComponent(firstWord)}&per_page=10`);
-          products = Array.isArray(firstWordRes.data) ? firstWordRes.data : (firstWordRes.data?.data || []);
-          // Filter results locally to match the second word if possible
-          if (products.length > 0) {
-            const secondWord = trimmedQuery.split(' ')[1].toLowerCase();
-            const filtered = products.filter((p: any) => p.name.toLowerCase().includes(secondWord));
-            if (filtered.length > 0) products = filtered;
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmedQuery)}&type=${activeTab}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (activeTab === 'products') {
+            setResults(data);
+          } else {
+            setArticles(data);
           }
         }
-
-        // Strategy 3: WP Core Search Fallback
-        if (products.length === 0) {
-          const { STORE_URL } = await import('@/lib/api/client');
-          const wpSearchUrl = `${STORE_URL}/wp-json/wp/v2/search?type=post&subtype=product&search=${encodeURIComponent(trimmedQuery)}&per_page=5`;
-          try {
-            const wpRes = await fetch(wpSearchUrl);
-            if (wpRes.ok) {
-              const wpData = await wpRes.json();
-              if (Array.isArray(wpData) && wpData.length > 0) {
-                const ids = wpData.map((item: any) => item.id).join(',');
-                const productsRes = await fetchStoreApi<any>(`products?include=${ids}`);
-                products = Array.isArray(productsRes.data) ? productsRes.data : (productsRes.data?.data || []);
-              }
-            }
-          } catch (e) { console.warn('WP Search failed', e); }
-        }
-
-        // Strategy 4: Slug variations
-        if (products.length === 0) {
-          const baseSlug = trimmedQuery.toLowerCase().replace(/\s+/g, '-');
-          const variations = [baseSlug, `${baseSlug}-wallpaper`, `${baseSlug}-mural`, `${baseSlug}-home-decor`];
-          for (const slug of variations) {
-            const slugRes = await fetchStoreApi<any>(`products?slug=${slug}&per_page=1`);
-            const found = Array.isArray(slugRes.data) ? slugRes.data : (slugRes.data?.data || []);
-            if (found.length > 0) { products = found; break; }
-          }
-        }
-
-        setResults(products);
       } catch (error) {
         console.error('Search failed:', error);
-        setResults([]);
       } finally {
         setIsLoading(false);
       }
-
-
-
-
-
-
-
     };
 
-
-    const timeoutId = setTimeout(searchProducts, 300);
+    const timeoutId = setTimeout(performSearch, 300);
     return () => clearTimeout(timeoutId);
-  }, [query]);
+  }, [query, activeTab]);
 
   // Handle escape key
   useEffect(() => {
@@ -151,13 +107,24 @@ export const SearchDrawer: React.FC<SearchDrawerProps> = ({ isOpen, onClose }) =
           )}
 
           <div className={styles.tabs}>
-            <button className={`${styles.tab} ${styles.activeTab}`}>Products</button>
-            <button className={styles.tab}>Articles</button>
+            <button 
+              className={`${styles.tab} ${activeTab === 'products' ? styles.activeTab : ''}`}
+              onClick={() => setActiveTab('products')}
+            >
+              Products
+            </button>
+            <button 
+              className={`${styles.tab} ${activeTab === 'articles' ? styles.activeTab : ''}`}
+              onClick={() => setActiveTab('articles')}
+            >
+              Articles
+            </button>
           </div>
 
           <div className={styles.resultsList}>
             {isLoading && <div className={styles.loading}>Searching...</div>}
-            {!isLoading && results.length > 0 && results.map((product: any) => {
+            
+            {!isLoading && activeTab === 'products' && results.length > 0 && results.map((product: any) => {
               const imageUrl = product.images?.[0]?.src || 
                               product.images?.[0]?.thumbnail || 
                               product.images?.[0]?.url ||
@@ -189,19 +156,44 @@ export const SearchDrawer: React.FC<SearchDrawerProps> = ({ isOpen, onClose }) =
               );
             })}
 
-            {!isLoading && query.trim().length >= 2 && results.length === 0 && (
-              <p className={styles.noResults}>No products found.</p>
+            {!isLoading && activeTab === 'articles' && articles.length > 0 && articles.map((post: any) => (
+              <Link 
+                key={post.id} 
+                href={`/blog/${post.slug}`} 
+                className={styles.resultItem}
+                onClick={onClose}
+              >
+                <div className={styles.thumbWrapper}>
+                  {post._embedded?.['wp:featuredmedia']?.[0]?.source_url && (
+                    <img 
+                      src={post._embedded['wp:featuredmedia'][0].source_url} 
+                      alt={post.title.rendered} 
+                      className={styles.thumb} 
+                    />
+                  )}
+                </div>
+                <div className={styles.resultInfo}>
+                  <h5 className={styles.resultName} dangerouslySetInnerHTML={{ __html: post.title.rendered }} />
+                  <p className={styles.resultMeta}>Blog Post</p>
+                </div>
+              </Link>
+            ))}
+
+            {!isLoading && query.trim().length >= 2 && 
+             ((activeTab === 'products' && results.length === 0) || 
+              (activeTab === 'articles' && articles.length === 0)) && (
+              <p className={styles.noResults}>No {activeTab} found.</p>
             )}
           </div>
         </div>
 
         <div className={styles.footer}>
           <Link 
-            href={`/category/wallpapers?search=${query}`} 
+            href={activeTab === 'products' ? `/search?q=${query}` : `/blog?search=${query}`} 
             className={styles.viewAllBtn}
             onClick={onClose}
           >
-            View all results
+            VIEW ALL RESULTS
           </Link>
         </div>
       </div>

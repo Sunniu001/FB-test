@@ -8,7 +8,7 @@ import { useCartStore } from '@/store/cartStore';
 import { useWishlistStore } from '@/store/wishlistStore';
 import { useAuthStore } from '@/store/authStore';
 import { useUIStore } from '@/store/uiStore';
-import { signOut as nextAuthSignOut } from 'next-auth/react';
+import { signOut as nextAuthSignOut, useSession } from 'next-auth/react';
 import styles from './Header.module.css';
 
 /* ─── Social-bar icons ───────────────────────────────────── */
@@ -83,11 +83,25 @@ export const Header: React.FC = () => {
 
   const { cart, setIsOpen } = useCartStore();
   const { lists } = useWishlistStore();
-  const { user, logout } = useAuthStore();
+  const { user, logout, setUser } = useAuthStore();
   const { openLoginModal } = useUIStore();
+  const { data: session } = useSession();
 
   useEffect(() => {
     setMounted(true);
+    
+    // Sync NextAuth session to Zustand store if it exists but store is empty
+    if (session?.user && !user) {
+      setUser({
+        id: (session as any).wpId,
+        email: session.user.email || '',
+        firstName: (session as any).wpFirstName || '',
+        lastName: (session as any).wpLastName || '',
+        displayName: session.user.name || '',
+        token: (session as any).wpToken || '',
+      });
+    }
+
     const handleScroll = () => setScrolled(window.scrollY > 40);
     const handleClickOutside = (e: MouseEvent) => {
       if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
@@ -255,7 +269,7 @@ export const Header: React.FC = () => {
               </button>
               {isAccountMenuOpen && (
                 <div className={styles.accountDropdown}>
-                  {user ? (
+                  {(user || session) ? (
                     <>
                       <Link href="/account?section=orders" className={styles.accountDropdownItem} onClick={() => setIsAccountMenuOpen(false)}>Orders</Link>
                       <Link href="/wishlist" className={styles.accountDropdownItem} onClick={() => setIsAccountMenuOpen(false)}>Wishlist</Link>
@@ -368,7 +382,7 @@ export const Header: React.FC = () => {
             
             <div className={styles.mobileAccount}>
               <div className={styles.mobileAccountTitle}>MY ACCOUNT</div>
-              {user ? (
+              {(user || session) ? (
                 <>
                   <Link href="/account?section=orders" className={styles.mobileNavLink} style={{ fontSize: '1rem', border: 'none', textTransform: 'uppercase' }} onClick={() => setIsMobileMenuOpen(false)}>Orders</Link>
                   <Link href="/account" className={styles.mobileNavLink} style={{ fontSize: '1rem', border: 'none', textTransform: 'uppercase' }} onClick={() => setIsMobileMenuOpen(false)}>My Profile</Link>

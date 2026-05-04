@@ -225,6 +225,29 @@
   color: #111;
 }
 
+.footerNotes {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.footerNote {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.footerNote svg {
+  color: #111;
+  flex-shrink: 0;
+}
+
 @media (max-width: 768px) {
   .sectionTitle {
     font-size: 1rem;
@@ -237,6 +260,10 @@
   .addToCartBtn, .wishlistBtn {
     padding: 0.875rem;
     font-size: 0.9rem;
+  }
+
+  .footerNotes {
+    /* Maintain space-between distribution on tablets */
   }
 }
 
@@ -264,6 +291,7 @@
   
   .footerNotes {
     flex-direction: column;
+    align-items: flex-start;
     gap: 0.75rem;
   }
   

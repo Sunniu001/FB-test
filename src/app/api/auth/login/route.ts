@@ -14,15 +14,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 1: Get JWT token from WordPress
-    const jwtRes = await fetch(`${WP_URL}/wp-json/jwt-auth/v1/token`, {
+    const tokenUrl = `${WP_URL}/wp-json/jwt-auth/v1/token`;
+    console.log(`[login] Attempting JWT fetch at: ${tokenUrl}`);
+    
+    const jwtRes = await fetch(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: email, password }),
     });
+    
     const jwtData = await jwtRes.json();
+    
     if (!jwtRes.ok) {
-      const message = jwtData?.message?.replace(/<[^>]+>/g, '') || 'Invalid email or password.';
-      return NextResponse.json({ message }, { status: 401 });
+      console.error('[login] JWT Error:', jwtData);
+      const message = jwtData?.message?.replace(/<[^>]+>/g, '') || `WP Error: ${jwtRes.status} ${jwtRes.statusText}`;
+      return NextResponse.json({ message, code: jwtData?.code }, { status: 401 });
     }
 
     // Step 2: Look up WooCommerce customer by email (needs server-side Basic Auth)

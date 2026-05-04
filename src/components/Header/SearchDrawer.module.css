@@ -170,6 +170,12 @@
   margin: 0;
 }
 
+.resultMeta {
+  font-size: 0.75rem;
+  color: #999;
+  margin: 0;
+}
+
 .loading, .noResults {
   text-align: center;
   padding: 20px;

@@ -1,11 +1,23 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { signIn as nextAuthSignIn } from 'next-auth/react';
 import { useCartStore } from '@/store/cartStore';
 import { useAuthStore } from '@/store/authStore';
+import { useUIStore } from '@/store/uiStore';
 import { getCart, placeOrder, BillingDetails } from '@/lib/api/cart';
 import styles from './CheckoutPage.module.css';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
+const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
+
 
 const INDIA_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -30,6 +42,7 @@ export const CheckoutPage: React.FC = () => {
     selectedItemIds, clearSelection,
   } = useCartStore();
   const { user } = useAuthStore();
+  const { openLoginModal } = useUIStore();
 
   const [billing, setBilling] = useState<BillingDetails>(initialBilling);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
@@ -67,6 +80,118 @@ export const CheckoutPage: React.FC = () => {
     setBilling(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const handleRazorpayPayment = async (wcOrderId: number, amount: number) => {
+    const res = await loadRazorpayScript();
+
+    if (!res) {
+      setError('Razorpay SDK failed to load. Please check your connection.');
+      return;
+    }
+
+    try {
+      // 1. Create Razorpay Order in our backend
+      const orderRes = await fetch('/api/razorpay/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amount,
+          receipt: `wc_order_${wcOrderId}`,
+        }),
+      });
+
+      if (!orderRes.ok) {
+        throw new Error('Failed to initialize payment with Razorpay.');
+      }
+
+      const rzpOrder = await orderRes.json();
+
+      // 2. Open Razorpay Modal
+      const options = {
+        key: RAZORPAY_KEY_ID,
+        amount: rzpOrder.amount,
+        currency: rzpOrder.currency,
+        name: 'FirstRoom',
+        description: `Order #${wcOrderId}`,
+        order_id: rzpOrder.id,
+        handler: async function (response: any) {
+          setIsSubmitting(true);
+          try {
+            // 3. Verify payment in our backend
+            const verifyRes = await fetch('/api/razorpay/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                wc_order_id: wcOrderId,
+              }),
+            });
+
+            if (verifyRes.ok) {
+              router.push(`/thank-you?order_id=${wcOrderId}`);
+            } else {
+              const err = await verifyRes.json();
+              setError(err.message || 'Payment verification failed. Please contact support.');
+            }
+          } catch (err) {
+            setError('An error occurred while verifying your payment.');
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
+        prefill: {
+          name: `${billing.first_name} ${billing.last_name}`,
+          email: billing.email,
+          contact: billing.phone,
+        },
+        theme: {
+          color: '#1a1a1a',
+        },
+        modal: {
+          ondismiss: function() {
+            setIsSubmitting(false);
+          }
+        },
+        config: {
+          display: {
+            blocks: {
+              upi: {
+                name: 'UPI / Google Pay / PhonePe',
+                instruments: [
+                  {
+                    method: 'upi'
+                  }
+                ]
+              }
+            },
+            sequence: ['block.upi', 'block.card', 'block.netbanking'],
+            preferences: {
+              show_default_blocks: true
+            }
+          }
+        }
+      };
+
+      const paymentObject = new window.Razorpay(options);
+      paymentObject.open();
+    } catch (err: any) {
+      setError(err.message || 'Could not initialize Razorpay modal.');
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cartToken || !cart) return;
@@ -74,6 +199,7 @@ export const CheckoutPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
+      // 1. Place the order
       const result = await placeOrder(
         cartToken,
         billing,
@@ -83,29 +209,27 @@ export const CheckoutPage: React.FC = () => {
         user?.token
       );
 
-      // Clear the cart state and selection after placing order
-      setCart(null);
+      // Refresh the cart from the server to reflect only the remaining (unselected) items
+      const updatedCart = await getCart(cartToken);
+      setCart(updatedCart);
       clearSelection();
 
-      // If this was a guest checkout (no logged-in user), flag the email
-      // so the account page can show the "temporary password" notice
       if (!user) {
         localStorage.setItem('fr_guest_order_email', billing.email);
       }
 
-      // For Razorpay: follow the payment gateway redirect URL.
-      // For COD (and any other non-gateway method): go directly to our thank-you page.
-      if (paymentMethod === 'razorpay' && result.paymentRedirectUrl) {
-        window.location.href = result.paymentRedirectUrl;
+      if (paymentMethod === 'razorpay') {
+        // Trigger the modal flow
+        await handleRazorpayPayment(result.orderId, subtotal);
       } else {
         router.push(`/thank-you?order_id=${result.orderId}`);
       }
     } catch (err: any) {
       setError(err?.message || 'Something went wrong placing your order. Please try again.');
-    } finally {
       setIsSubmitting(false);
     }
   };
+
 
   const isFormValid = billing.first_name && billing.last_name &&
     billing.address_1 && billing.city && billing.state &&
@@ -115,6 +239,27 @@ export const CheckoutPage: React.FC = () => {
     return (
       <div className={styles.checkoutContainer}>
         <p>No items selected for checkout. <button className={styles.backLink} onClick={() => router.push('/cart')}>← Return to Cart</button></p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className={styles.checkoutContainer}>
+        <div style={{ textAlign: 'center', padding: '100px 0' }}>
+          <h1 className={styles.pageTitle}>Checkout</h1>
+          <p style={{ color: '#666', marginBottom: '30px' }}>Please login or create an account to continue with your purchase.</p>
+          <button 
+            className={styles.placeOrderBtn} 
+            style={{ maxWidth: '300px', margin: '0 auto' }}
+            onClick={openLoginModal}
+          >
+            LOGIN / SIGN UP
+          </button>
+          <p style={{ marginTop: '20px' }}>
+            <Link href="/cart" style={{ color: '#8FA899', textDecoration: 'underline' }}>Back to Cart</Link>
+          </p>
+        </div>
       </div>
     );
   }
@@ -297,7 +442,7 @@ export const CheckoutPage: React.FC = () => {
                   className={styles.paymentRadio}
                 />
                 <div className={styles.paymentOptionContent}>
-                  <span className={styles.paymentOptionLabel}>🔒 Razorpay</span>
+                  <span className={styles.paymentOptionLabel}>🔒 Pay Now (UPI, Cards, Net Banking)</span>
                   <span className={styles.paymentOptionDesc}>Pay securely via UPI, Cards, Net Banking &amp; Wallets</span>
                 </div>
               </label>

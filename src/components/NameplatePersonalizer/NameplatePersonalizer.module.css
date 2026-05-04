@@ -1,21 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Alex+Brush&family=Caveat:wght@400;700&family=Dancing+Script:wght@400;700&family=Pacifico&family=Playball&family=Sacramento&family=Satisfy&family=Yellowtail&display=swap');
+
 .container {
-  margin-top: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
 }
 
 .title {
   font-family: var(--font-serif);
-  font-size: 1.5rem;
+  font-size: 1.1rem; /* Smaller title */
   font-weight: 600;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
 }
 
 .controlsRow {
   display: flex;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
 }
 
 .controlGroup {
@@ -28,26 +28,26 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-xs);
+  margin-bottom: 4px;
 }
 
 .label {
   font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .charCount {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 .input, .select {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   font-family: var(--font-sans);
-  font-size: 1rem;
+  font-size: 0.9rem;
   background-color: var(--bg-primary);
   outline: none;
   transition: border-color var(--transition-fast);
@@ -60,8 +60,8 @@
 .mockupContainer {
   position: relative;
   width: 100%;
-  max-width: 600px;
-  margin: 0 auto;
+  max-width: 350px; /* Much smaller */
+  margin: 0; /* Left align */
   border: 1px solid var(--border-color);
   border-radius: 4px;
   overflow: hidden;
@@ -78,27 +78,103 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  /* These transforms simulate the perspective in the product photo if no plugin coords exist */
-  transform: translate(-50%, -50%) rotate(-8deg) skewX(-10deg);
-  width: 60%;
+  /* Default centering if no coords provided */
+  transform: translate(-50%, -50%);
+  width: 100%;
+  /* Box width */
+  height: auto;
   display: flex;
   justify-content: center;
   align-items: center;
   text-align: center;
   color: #1a1a1a;
-  font-size: 3.5rem;
-  line-height: 1.2;
-  white-space: nowrap;
-  padding: 0 20%;
+  font-size: 2rem;
+  /* Slightly smaller default */
+  line-height: 1.1;
+  word-wrap: break-word;
+  padding: 0 1%;
+  /* Left and Right margin inside the box */
   box-sizing: border-box;
-  
+  overflow: hidden;
+  max-height: 80%;
+  /* Don't spill out vertically */
+
   /* 3D acrylic shadow effect */
-  text-shadow: 
+  text-shadow:
     1px 1px 0 #555,
     2px 2px 0 #555,
     3px 3px 0 #444,
-    4px 4px 4px rgba(0,0,0,0.4),
-    6px 12px 10px rgba(0,0,0,0.3);
+    4px 4px 4px rgba(0, 0, 0, 0.4),
+    6px 12px 10px rgba(0, 0, 0, 0.3);
+}
+
+.zoomButton {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: all 0.2s;
+  color: #333;
+}
+
+.zoomButton:hover {
+  transform: scale(1.1);
+  border-color: #000;
+}
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modalContent {
+  position: relative;
+  width: 95%;
+  max-width: 900px;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.closeModal {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #eee;
+  border: none;
+  font-size: 1.5rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 20;
+}
+
+.zoomedContainer {
+  max-width: 100% !important;
+  border: none !important;
 }
 
 .disclaimer {
@@ -106,4 +182,27 @@
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
   text-align: left;
+}
+@media (max-width: 480px) {
+  .controlsRow {
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+  
+  .mockupContainer {
+    max-width: 100%; /* Full width on mobile */
+  }
+
+  .modalContent {
+    padding: 5px;
+    width: 100%;
+  }
+
+  .closeModal {
+    top: 5px;
+    right: 5px;
+    width: 28px;
+    height: 28px;
+    font-size: 1.2rem;
+  }
 }

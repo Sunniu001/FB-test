@@ -32,9 +32,9 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
 
     if (!res.ok) {
-      // Surface the WC error message cleanly
-      const message = data?.message?.replace(/<[^>]+>/g, '') || 'Registration failed.';
-      return NextResponse.json({ message }, { status: res.status });
+      console.error('[register] WooCommerce Error:', data);
+      const message = data?.message?.replace(/<[^>]+>/g, '') || `WC Error: ${res.status}`;
+      return NextResponse.json({ message, code: data?.code }, { status: res.status });
     }
 
     return NextResponse.json({ id: data.id, email: data.email });

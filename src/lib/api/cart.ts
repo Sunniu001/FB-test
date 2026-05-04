@@ -174,6 +174,8 @@ export interface BillingDetails {
   country: string;
   email: string;
   phone: string;
+  create_account?: boolean;
+  password?: string;
 }
 
 export interface CheckoutResult {
@@ -234,7 +236,7 @@ export async function placeOrder(
   const checkoutPayload = {
     billing_address: { ...billing },
     shipping_address: { ...billing },
-    payment_method: paymentMethod,
+    payment_method: paymentMethod === 'razorpay' ? 'cod' : paymentMethod,
     payment_data: [],
     customer_note: note.trim(),
   };
