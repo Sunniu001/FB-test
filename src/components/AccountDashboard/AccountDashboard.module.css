@@ -338,7 +338,7 @@
   text-transform: uppercase;
 }
 
-.statusDelivered { color: #777; }
+.statusDelivered { color: #2e7d32; }
 .statusProcessing { color: #a67b45; }
 .statusCancelled { color: #d32f2f; }
 .statusPending { color: #888; }
