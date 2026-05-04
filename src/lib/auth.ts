@@ -37,7 +37,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           if (!jwtRes.ok) throw new Error(jwtData.message || 'Invalid credentials');
 
           // 2. Fetch WooCommerce customer data
-          const basicAuth = Buffer.from(`${WC_KEY}:${WC_SECRET}`).toString('base64');
+          const basicAuth = btoa(`${WC_KEY}:${WC_SECRET}`);
           const custRes = await fetch(
             `${WC_API}/customers?email=${encodeURIComponent(credentials.email as string)}&role=all`,
             { headers: { Authorization: `Basic ${basicAuth}` } }
@@ -67,7 +67,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // For social logins, we still need the sync logic
       if (account?.provider === 'google') {
         try {
-          const basicAuth = Buffer.from(`${WC_KEY}:${WC_SECRET}`).toString('base64');
+          const basicAuth = btoa(`${WC_KEY}:${WC_SECRET}`);
           const fetchOpts = { headers: { Authorization: `Basic ${basicAuth}`, 'Content-Type': 'application/json' } };
           const email = user.email!;
 
