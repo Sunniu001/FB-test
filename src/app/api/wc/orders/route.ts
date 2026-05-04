@@ -12,16 +12,22 @@ function basicAuth() {
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const customerId = searchParams.get('customer_id');
+  const email = searchParams.get('email');
   const orderId = searchParams.get('id');
 
-  if (!customerId && !orderId) {
-    return NextResponse.json({ message: 'customer_id or id required' }, { status: 400 });
+  if (!customerId && !orderId && !email) {
+    return NextResponse.json({ message: 'customer_id, email or id required' }, { status: 400 });
   }
 
   try {
-    const url = orderId 
-      ? `${WC_API}/orders/${orderId}`
-      : `${WC_API}/orders?customer=${customerId}&per_page=20&orderby=date&order=desc`;
+    let url = '';
+    if (orderId) {
+      url = `${WC_API}/orders/${orderId}`;
+    } else if (email) {
+      url = `${WC_API}/orders?billing_email=${encodeURIComponent(email)}&per_page=50&orderby=date&order=desc`;
+    } else {
+      url = `${WC_API}/orders?customer=${customerId}&per_page=50&orderby=date&order=desc`;
+    }
       
     const res = await fetch(
       url,

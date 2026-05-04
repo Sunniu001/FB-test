@@ -63,7 +63,7 @@ export const AccountDashboard: React.FC = () => {
       try {
         const [custRes, ordersRes] = await Promise.all([
           fetch(`/api/wc/customer?email=${encodeURIComponent(user.email)}`),
-          fetch(`/api/wc/orders?customer_id=${user.id}`),
+          fetch(`/api/wc/orders?email=${encodeURIComponent(user.email)}`),
         ]);
         if (custRes.ok) setCustomer(await custRes.json());
         if (ordersRes.ok) setOrders(await ordersRes.json());
