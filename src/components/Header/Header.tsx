@@ -116,11 +116,24 @@ export const Header: React.FC = () => {
     };
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // 1. Clear Auth Store
     logout();
-    nextAuthSignOut({ redirect: false }).catch(() => {});
+    
+    // 2. Clear Cart Store (Prevents Zombie items from previous sessions)
+    useCartStore.getState().setCart(null);
+    useCartStore.getState().setCartToken(null);
+    
+    // 3. Clear NextAuth Session
+    await nextAuthSignOut({ redirect: false });
+    
+    // 4. Reset UI
     setIsAccountMenuOpen(false);
+    setIsMobileMenuOpen(false);
+    
+    // 5. Final Redirect
     router.push('/');
+    router.refresh(); // Force a clean state refresh
   };
 
   const cartCount = cart?.totalQuantity || 0;
