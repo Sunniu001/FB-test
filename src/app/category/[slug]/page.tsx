@@ -27,7 +27,7 @@ export default async function CategoryPage({
   // Strategy 1: Direct Fetch (Most reliable for Vercel/Next.js)
   try {
     const { wcFetch } = await import("@/lib/api/client");
-    const catSearch = await wcFetch(`products/categories?slug=${decodedSlug}`);
+    const catSearch = await wcFetch<any[]>(`products/categories?slug=${decodedSlug}`);
     if (catSearch && catSearch.length > 0) {
       const cat = catSearch[0];
       currentCategory = {

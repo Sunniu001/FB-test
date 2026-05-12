@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { signIn as nextAuthSignIn } from 'next-auth/react';
 import { useCartStore } from '@/store/cartStore';
 import { useAuthStore } from '@/store/authStore';
-import { useUIStore } from '@/store/uiStore';
-import { getCart, placeOrder, BillingDetails } from '@/lib/api/cart';
+import { getCart, BillingDetails } from '@/lib/api/cart';
+import { placeOrderClient } from '@/lib/api/checkoutClient';
 import styles from './CheckoutPage.module.css';
 
 declare global {
@@ -18,6 +16,11 @@ declare global {
 
 const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
 
+type CheckoutPhase =
+  | 'idle'
+  | 'creating_order'
+  | 'payment_pending'
+  | 'finalizing';
 
 const INDIA_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -38,20 +41,23 @@ const initialBilling: BillingDetails = {
 export const CheckoutPage: React.FC = () => {
   const router = useRouter();
   const {
-    cart, cartToken, setCart, setIsLoading, isLoading,
+    cart, cartToken, cartLastSyncedAt, setCart, setIsLoading, isLoading,
     selectedItemIds, clearSelection,
   } = useCartStore();
   const { user } = useAuthStore();
-  const { openLoginModal } = useUIStore();
 
   const [billing, setBilling] = useState<BillingDetails>(initialBilling);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [phase, setPhase] = useState<CheckoutPhase>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  // Rehydrate cart if needed
   useEffect(() => {
-    if (cartToken && !cart) {
+    const shouldRevalidate =
+      cartToken &&
+      (!cart || !cartLastSyncedAt || (Date.now() - cartLastSyncedAt > 30_000));
+
+    if (shouldRevalidate) {
       const fetch = async () => {
         setIsLoading(true);
         try {
@@ -63,9 +69,8 @@ export const CheckoutPage: React.FC = () => {
       };
       fetch();
     }
-  }, [cartToken, cart, setCart, setIsLoading]);
+  }, [cartToken, cart, cartLastSyncedAt, setCart, setIsLoading]);
 
-  // Compute selected items
   const selectedItems = useMemo(() => {
     if (!cart) return [];
     return cart.items.filter(item => selectedItemIds.includes(item.id));
@@ -80,8 +85,22 @@ export const CheckoutPage: React.FC = () => {
     setBilling(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const getSubmitLabel = () => {
+    if (!isSubmitting) return 'PLACE ORDER';
+    switch (phase) {
+      case 'creating_order':
+        return 'CREATING ORDER...';
+      case 'payment_pending':
+        return 'WAITING FOR PAYMENT...';
+      case 'finalizing':
+        return 'FINALIZING...';
+      default:
+        return 'PROCESSING...';
+    }
+  };
+
   const loadRazorpayScript = () => {
-    return new Promise((resolve) => {
+    return new Promise<boolean>((resolve) => {
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
@@ -92,15 +111,18 @@ export const CheckoutPage: React.FC = () => {
   };
 
   const handleRazorpayPayment = async (wcOrderId: number, amount: number) => {
+    setPhase('payment_pending');
+
     const res = await loadRazorpayScript();
 
     if (!res) {
       setError('Razorpay SDK failed to load. Please check your connection.');
+      setIsSubmitting(false);
+      setPhase('idle');
       return;
     }
 
     try {
-      // 1. Create Razorpay Order in our backend
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,7 +138,6 @@ export const CheckoutPage: React.FC = () => {
 
       const rzpOrder = await orderRes.json();
 
-      // 2. Open Razorpay Modal
       const options = {
         key: RAZORPAY_KEY_ID,
         amount: rzpOrder.amount,
@@ -125,9 +146,9 @@ export const CheckoutPage: React.FC = () => {
         description: `Order #${wcOrderId}`,
         order_id: rzpOrder.id,
         handler: async function (response: any) {
+          setPhase('finalizing');
           setIsSubmitting(true);
           try {
-            // 3. Verify payment in our backend
             const verifyRes = await fetch('/api/razorpay/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -142,13 +163,15 @@ export const CheckoutPage: React.FC = () => {
             if (verifyRes.ok) {
               router.push(`/thank-you?order_id=${wcOrderId}`);
             } else {
-              const err = await verifyRes.json();
+              const err = await verifyRes.json().catch(() => ({}));
               setError(err.message || 'Payment verification failed. Please contact support.');
+              setIsSubmitting(false);
+              setPhase('idle');
             }
-          } catch (err) {
+          } catch {
             setError('An error occurred while verifying your payment.');
-          } finally {
             setIsSubmitting(false);
+            setPhase('idle');
           }
         },
         prefill: {
@@ -160,8 +183,9 @@ export const CheckoutPage: React.FC = () => {
           color: '#1a1a1a',
         },
         modal: {
-          ondismiss: function() {
+          ondismiss: function () {
             setIsSubmitting(false);
+            setPhase('idle');
           }
         },
         config: {
@@ -186,68 +210,29 @@ export const CheckoutPage: React.FC = () => {
 
       const paymentObject = new window.Razorpay(options);
       paymentObject.open();
-    } catch (err: any) {
-      setError(err.message || 'Could not initialize Razorpay modal.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Could not initialize Razorpay modal.';
+      setError(message);
       setIsSubmitting(false);
+      setPhase('idle');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cartToken || !cart) return;
+
     setError(null);
     setIsSubmitting(true);
 
     try {
-      // 1. If not logged in, register first using account_email
-      if (!user && billing.account_email && billing.password) {
-        const regRes = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            firstName: billing.first_name,
-            lastName: billing.last_name,
-            email: billing.account_email,
-            password: billing.password,
-          }),
-        });
-        
-        if (!regRes.ok) {
-          const regData = await regRes.json();
-          if (regData.code !== 'registration-error-email-exists') {
-            throw new Error(regData.message || 'Registration failed.');
-          }
-        }
-
-        // Silent login
-        await nextAuthSignIn('credentials', {
-          email: billing.account_email,
-          password: billing.password,
-          redirect: false,
-        });
-
-        // Sync store
-        const sessionRes = await fetch('/api/auth/session');
-        if (sessionRes.ok) {
-          const session = await sessionRes.json();
-          if (session.user) {
-            useAuthStore.getState().setUser({
-              id: session.wpId,
-              email: session.user.email,
-              firstName: session.wpFirstName,
-              lastName: session.wpLastName,
-              displayName: session.user.name,
-              token: session.wpToken,
-            });
-          }
-        }
+      const currentToken = useAuthStore.getState().user?.token || user?.token;
+      if (!currentToken) {
+        throw new Error('Authentication required. Please log in to place your order.');
       }
 
-      // 2. Place the order
-      // Use the newly fetched token if we just registered, otherwise use existing user token
-      const currentToken = useAuthStore.getState().user?.token || user?.token;
-      
-      const result = await placeOrder(
+      setPhase('creating_order');
+      const result = await placeOrderClient(
         cartToken,
         billing,
         selectedItemIds,
@@ -256,31 +241,34 @@ export const CheckoutPage: React.FC = () => {
         currentToken
       );
 
-      // Refresh the cart from the server to reflect only the remaining (unselected) items
+      setPhase('finalizing');
+
       const updatedCart = await getCart(cartToken);
       setCart(updatedCart);
       clearSelection();
 
-      if (!user) {
-        localStorage.setItem('fr_guest_order_email', billing.email);
+      if (result.cartCleanup?.failedItemKeys?.length) {
+        console.warn('Order created but some purchased lines could not be removed from cart.', result.cartCleanup.failedItemKeys);
       }
 
       if (paymentMethod === 'razorpay') {
-        // Trigger the modal flow
         await handleRazorpayPayment(result.orderId, subtotal);
       } else {
         router.push(`/thank-you?order_id=${result.orderId}`);
       }
-    } catch (err: any) {
-      setError(err?.message || 'Something went wrong placing your order. Please try again.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong placing your order. Please try again.';
+      setError(message);
       setIsSubmitting(false);
+      setPhase('idle');
     }
   };
-
 
   const isFormValid = billing.first_name && billing.last_name &&
     billing.address_1 && billing.city && billing.state &&
     billing.postcode && billing.email && billing.phone;
+
+  const canSubmit = Boolean(isFormValid && !isSubmitting && !isLoading);
 
   if (!cart || selectedItems.length === 0) {
     return (
@@ -297,58 +285,9 @@ export const CheckoutPage: React.FC = () => {
       </button>
       <h1 className={styles.pageTitle}>Checkout</h1>
 
-      {/* ── NEW: ACCOUNT SECTION ── */}
-      <div className={styles.accountSection} style={{ marginBottom: '40px', padding: '30px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>Account Information</h2>
-          {!user && (
-            <button 
-              type="button" 
-              className={styles.loginToggleBtn} 
-              onClick={openLoginModal}
-              style={{ background: 'none', border: 'none', color: '#a67b45', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500, textDecoration: 'underline' }}
-            >
-              Already have an account? Log in
-            </button>
-          )}
-        </div>
-        {user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#8FA899' }}></div>
-            <p style={{ margin: 0, fontSize: '1rem' }}>
-              Logged in as: <strong>{user.email}</strong>
-            </p>
-          </div>
-        ) : (
-          <div className={styles.formGrid}>
-            <div className={styles.formGroup}>
-              <label>Account Email<span className={styles.required}>*</span></label>
-              <input
-                className={styles.formInput} type="email"
-                name="account_email" value={billing.account_email || ''}
-                onChange={handleChange} required
-                placeholder="email@example.com"
-              />
-              <small style={{ color: '#888', marginTop: '5px', display: 'block' }}>This will be your primary login and order tracking email.</small>
-            </div>
-            <div className={styles.formGroup}>
-              <label>Password<span className={styles.required}>*</span></label>
-              <input
-                className={styles.formInput} type="password"
-                name="password" value={billing.password || ''}
-                onChange={handleChange} required
-                placeholder="Choose a password (min. 8 characters)"
-                minLength={8}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
       <form onSubmit={handleSubmit}>
         <div className={styles.checkoutGrid}>
 
-          {/* ── LEFT: BILLING FORM ── */}
           <div>
             <h2 className={styles.sectionTitle}>Billing Details</h2>
             <div className={styles.formGrid}>
@@ -454,12 +393,11 @@ export const CheckoutPage: React.FC = () => {
                   onChange={handleChange} required
                   placeholder="Billing contact email"
                 />
-                <small style={{ color: '#888', marginTop: '5px', display: 'block' }}>Email for invoices and payment updates (can be different from account).</small>
+                <small style={{ color: '#888', marginTop: '5px', display: 'block' }}>Email for invoices and payment updates.</small>
               </div>
             </div>
           </div>
 
-          {/* ── RIGHT: ORDER SUMMARY ── */}
           <div className={styles.orderSummary}>
             <h2 className={styles.sectionTitle}>Your Order</h2>
 
@@ -543,9 +481,9 @@ export const CheckoutPage: React.FC = () => {
             <button
               type="submit"
               className={styles.placeOrderBtn}
-              disabled={!isFormValid || isSubmitting || isLoading}
+              disabled={!canSubmit}
             >
-              {isSubmitting ? 'PROCESSING...' : 'PLACE ORDER'}
+              {getSubmitLabel()}
             </button>
           </div>
 

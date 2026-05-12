@@ -6,10 +6,24 @@ import { updateCartItem, removeCartItem, getCart } from '@/lib/api/cart';
 import styles from './CartDrawer.module.css';
 
 export const CartDrawer: React.FC = () => {
-  const { cart, cartToken, isOpen, setIsOpen, setCart, setCartToken, setIsLoading, isLoading } = useCartStore();
+  const {
+    cart,
+    cartToken,
+    cartLastSyncedAt,
+    isOpen,
+    setIsOpen,
+    setCart,
+    setCartToken,
+    setIsLoading,
+    isLoading
+  } = useCartStore();
 
   useEffect(() => {
-    if (cartToken && !cart) {
+    const shouldRevalidate =
+      cartToken &&
+      (!cart || !cartLastSyncedAt || (Date.now() - cartLastSyncedAt > 30_000));
+
+    if (shouldRevalidate) {
       const fetchCart = async () => {
         setIsLoading(true);
         try {
@@ -23,7 +37,7 @@ export const CartDrawer: React.FC = () => {
       };
       fetchCart();
     }
-  }, [cartToken, cart, setCart, setIsLoading]);
+  }, [cartToken, cart, cartLastSyncedAt, setCart, setIsLoading]);
 
   const handleUpdateQuantity = async (itemKey: string, currentQuantity: number, change: number) => {
     if (!cartToken || !cart) return;

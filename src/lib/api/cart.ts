@@ -3,8 +3,120 @@
 import { fetchStoreApi } from './client';
 import { StoreCart, NormalizedCart } from '@/types/product';
 
+const SESSION_TTL_MS = 2 * 60 * 1000;
+
+interface CachedSession {
+  cartToken: string | null;
+  nonce: string | null;
+  updatedAt: number;
+}
+
+const sessionCache = new Map<string, CachedSession>();
+
+function getSessionCacheKey(cartToken: string | null): string {
+  return cartToken || '__guest__';
+}
+
+function readSessionCache(cartToken: string | null): CachedSession | null {
+  const cached = sessionCache.get(getSessionCacheKey(cartToken));
+  if (!cached) return null;
+  if (Date.now() - cached.updatedAt > SESSION_TTL_MS) {
+    sessionCache.delete(getSessionCacheKey(cartToken));
+    return null;
+  }
+  return cached;
+}
+
+function writeSessionCache(inputToken: string | null, cartToken: string | null, nonce: string | null): void {
+  if (!cartToken && !nonce) return;
+
+  const payload: CachedSession = {
+    cartToken: cartToken || inputToken,
+    nonce,
+    updatedAt: Date.now(),
+  };
+
+  sessionCache.set(getSessionCacheKey(inputToken), payload);
+  if (payload.cartToken) {
+    sessionCache.set(getSessionCacheKey(payload.cartToken), payload);
+  }
+}
+
+function clearSessionCache(cartToken: string | null): void {
+  sessionCache.delete(getSessionCacheKey(cartToken));
+}
+
+function isNonceOrSessionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  return (
+    message.includes('nonce') ||
+    message.includes('cookie') ||
+    message.includes('session') ||
+    message.includes('cart-token') ||
+    message.includes('woocommerce store api error')
+  );
+}
+
+async function getFreshSession(cartToken: string | null): Promise<{ cartToken: string | null; nonce: string | null }> {
+  const { cartToken: nextToken, nonce } = await fetchStoreApi<StoreCart>('cart', cartToken);
+  writeSessionCache(cartToken, nextToken || cartToken, nonce);
+  return { cartToken: nextToken || cartToken, nonce };
+}
+
+async function resolveSession(cartToken: string | null, forceRefresh: boolean): Promise<{ cartToken: string | null; nonce: string | null }> {
+  if (!forceRefresh) {
+    const cached = readSessionCache(cartToken);
+    if (cached?.nonce) {
+      return { cartToken: cached.cartToken, nonce: cached.nonce };
+    }
+  }
+
+  return getFreshSession(cartToken);
+}
+
+async function mutateCart(
+  endpoint: 'cart/add-item' | 'cart/update-item' | 'cart/remove-item',
+  cartToken: string | null,
+  body: Record<string, unknown>
+): Promise<{ cart: NormalizedCart; cartToken: string }> {
+  let activeToken = cartToken;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const forceRefresh = attempt > 0;
+    const { cartToken: sessionToken, nonce } = await resolveSession(activeToken, forceRefresh);
+    activeToken = sessionToken || activeToken;
+
+    try {
+      const { data, cartToken: nextToken, nonce: nextNonce } = await fetchStoreApi<StoreCart>(
+        endpoint,
+        activeToken,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+        },
+        nonce
+      );
+
+      const finalToken = (nextToken || activeToken) as string;
+      writeSessionCache(activeToken, finalToken, nextNonce || nonce);
+
+      return {
+        cart: normalizeCart(data),
+        cartToken: finalToken,
+      };
+    } catch (error) {
+      clearSessionCache(activeToken);
+      if (attempt === 0 && isNonceOrSessionError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Cart mutation failed after nonce/session retry.');
+}
+
 function normalizeCart(storeCart: StoreCart): NormalizedCart {
-  // Minor units define decimal placement. Usually 2 for most currencies.
   const minorUnit = storeCart.totals.currency_minor_unit || 2;
   const divisor = Math.pow(10, minorUnit);
 
@@ -13,39 +125,59 @@ function normalizeCart(storeCart: StoreCart): NormalizedCart {
     totalQuantity: storeCart.items.length,
     items: storeCart.items.map((item) => {
       let customData: Record<string, string> | undefined;
-      
-      // Check standard item_data
+
       if (item.item_data && Array.isArray(item.item_data)) {
         customData = item.item_data.reduce((acc, curr) => {
           acc[curr.key] = curr.value;
           return acc;
         }, {} as Record<string, string>);
       }
-      
-      // Fallback to extensions if available
+
       const extensions = (item as any).extensions;
       if (!customData && extensions?.custom_data) {
         customData = extensions.custom_data;
       }
-      
+
+      const hiddenVariationId = customData?._variation_id;
+      const variationIdRaw =
+        (item as any).variation_id ||
+        (item as any).variation?.id ||
+        hiddenVariationId;
+      const parsedVariationId = variationIdRaw ? Number(variationIdRaw) : NaN;
+
+      if (customData) {
+        customData = Object.entries(customData).reduce((acc, [key, value]) => {
+          if (!key.startsWith('_')) {
+            acc[key] = value;
+          }
+          return acc;
+        }, {} as Record<string, string>);
+
+        if (Object.keys(customData).length === 0) {
+          customData = undefined;
+        }
+      }
+
       const sku = item.sku || '';
-      const isWallpaper = (customData && Object.keys(customData).some(k => k.toLowerCase().includes('area'))) || 
-                         sku.startsWith('FMWPAR') || 
-                         item.name.toLowerCase().includes('shade');
+      const isWallpaper =
+        (customData && Object.keys(customData).some((key) => key.toLowerCase().includes('area'))) ||
+        sku.startsWith('FMWPAR') ||
+        item.name.toLowerCase().includes('shade');
 
       return {
         id: item.key,
-        productId: String(item.id),
+        productId: String(item.product_id || item.id),
+        variationId: Number.isFinite(parsedVariationId) && parsedVariationId > 0 ? parsedVariationId : undefined,
         quantity: item.quantity,
         title: item.name,
         image: item.images?.[0]?.src || '',
-        sku: sku,
-        isWallpaper: isWallpaper,
+        sku,
+        isWallpaper,
         price: {
           amount: String(parseInt(item.prices.price) / divisor),
           currencyCode: item.prices.currency_code,
         },
-        customData
+        customData,
       };
     }),
     cost: {
@@ -65,7 +197,8 @@ export async function getCart(cartToken: string | null): Promise<NormalizedCart 
   if (!cartToken) return null;
 
   try {
-    const { data } = await fetchStoreApi<StoreCart>('cart', cartToken);
+    const { data, cartToken: nextToken, nonce } = await fetchStoreApi<StoreCart>('cart', cartToken);
+    writeSessionCache(cartToken, nextToken || cartToken, nonce);
     return normalizeCart(data);
   } catch (error) {
     console.error('Error fetching cart:', error);
@@ -80,42 +213,24 @@ export async function addToCart(
   variation?: Array<{ attribute: string; value: string }>,
   customData?: Record<string, string>
 ): Promise<{ cart: NormalizedCart; cartToken: string }> {
-  let activeToken = cartToken;
-  let activeNonce: string | null = null;
-  
-  // 1. Ensure we have a valid token and a fresh nonce
-  const sessionRes = await fetchStoreApi<StoreCart>('cart', activeToken);
-  activeToken = sessionRes.cartToken;
-  activeNonce = sessionRes.nonce;
-
-  const payload: any = {
+  const payload: Record<string, unknown> = {
     id: productId,
     quantity,
   };
-  
+
   if (variation) {
     payload.variation = variation;
   }
-  
+
   if (customData) {
     payload.item_data = Object.entries(customData).map(([key, value]) => ({ key, value }));
-    payload.extensions = { 
-      ...payload.extensions, 
+    payload.extensions = {
       custom_data: customData,
-      metadata: Object.entries(customData).map(([key, value]) => ({ key, value }))
+      metadata: Object.entries(customData).map(([key, value]) => ({ key, value })),
     };
   }
 
-  // 2. Perform the add-item operation with the LATEST token and nonce
-  const { data, cartToken: newCartToken } = await fetchStoreApi<StoreCart>('cart/add-item', activeToken, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }, activeNonce);
-
-  return {
-    cart: normalizeCart(data),
-    cartToken: (newCartToken || activeToken) as string,
-  };
+  return mutateCart('cart/add-item', cartToken, payload);
 }
 
 export async function updateCartItem(
@@ -123,43 +238,19 @@ export async function updateCartItem(
   itemKey: string,
   quantity: number
 ): Promise<{ cart: NormalizedCart; cartToken: string }> {
-  // 1. Fetch latest token and fresh nonce
-  const { nonce, cartToken: latestToken } = await fetchStoreApi<StoreCart>('cart', cartToken);
-  const activeToken = latestToken || cartToken;
-
-  const { data, cartToken: newToken } = await fetchStoreApi<StoreCart>('cart/update-item', activeToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      key: itemKey,
-      quantity,
-    }),
-  }, nonce);
-
-  return {
-    cart: normalizeCart(data),
-    cartToken: (newToken || activeToken) as string,
-  };
+  return mutateCart('cart/update-item', cartToken, {
+    key: itemKey,
+    quantity,
+  });
 }
 
 export async function removeCartItem(
   cartToken: string,
   itemKey: string
 ): Promise<{ cart: NormalizedCart; cartToken: string }> {
-  // 1. Fetch latest token and fresh nonce
-  const { nonce, cartToken: latestToken } = await fetchStoreApi<StoreCart>('cart', cartToken);
-  const activeToken = latestToken || cartToken;
-
-  const { data, cartToken: newToken } = await fetchStoreApi<StoreCart>('cart/remove-item', activeToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      key: itemKey,
-    }),
-  }, nonce);
-
-  return {
-    cart: normalizeCart(data),
-    cartToken: (newToken || activeToken) as string,
-  };
+  return mutateCart('cart/remove-item', cartToken, {
+    key: itemKey,
+  });
 }
 
 export interface BillingDetails {
@@ -172,9 +263,9 @@ export interface BillingDetails {
   state: string;
   postcode: string;
   country: string;
-  email: string; // This will be Billing Email
+  email: string;
   phone: string;
-  account_email?: string; // This will be Account Email
+  account_email?: string;
   password?: string;
 }
 
@@ -183,101 +274,32 @@ export interface CheckoutResult {
   orderKey: string;
   paymentRedirectUrl: string | null;
   status: string;
+  cartCleanup?: {
+    removedItemKeys: string[];
+    failedItemKeys: string[];
+  };
 }
 
-/**
- * Selective checkout strategy:
- * 1. Temporarily remove unselected items from WooCommerce cart
- * 2. POST to /checkout with only the selected items
- * 3. Re-add the removed items back to the cart
- */
 export async function placeOrder(
   cartToken: string,
   billing: BillingDetails,
   selectedItemKeys: string[],
-  allItems: Array<{ id: string; productId: string; title: string; quantity: number; customData?: Record<string, string> }>,
+  allItems: Array<{
+    id: string;
+    productId: string;
+    variationId?: number;
+    title: string;
+    quantity: number;
+    customData?: Record<string, string>;
+  }>,
   paymentMethod: string = 'razorpay',
   authToken?: string
 ): Promise<CheckoutResult> {
-  // Step 0: Fetch the cart to obtain the Nonce header and SYNC it with the user if authToken is provided
-  const { nonce, cartToken: freshToken } = await fetchStoreApi<StoreCart>('cart', cartToken, {
-    headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
-  });
-  let tempToken = freshToken || cartToken;
-
-  // Step 1: Find items to temporarily remove (unselected)
-  const itemsToRemove = allItems.filter(item => !selectedItemKeys.includes(item.id));
-
-  // Step 2: Remove unselected items from the WC cart
-  for (const item of itemsToRemove) {
-    const { cartToken: updatedToken } = await fetchStoreApi<StoreCart>('cart/remove-item', tempToken, {
-      method: 'POST',
-      body: JSON.stringify({ key: item.id }),
-    }, nonce);
-    if (updatedToken) tempToken = updatedToken;
-  }
-
-  // Step 3: Place the order with selected items only
-  // Build a customer note that includes custom dimensions if they exist
-  let note = '';
-  const wallpaperItems = allItems.filter(item => selectedItemKeys.includes(item.id) && item.customData);
-  
-  if (wallpaperItems.length > 0) {
-    note = 'PRODUCT CUSTOMIZATIONS:\n';
-    wallpaperItems.forEach(item => {
-      note += `- ${item.title}:\n`;
-      if (item.customData) {
-        Object.entries(item.customData).forEach(([key, value]) => {
-          note += `  ${key}: ${value}\n`;
-        });
-      }
-    });
-    note += '\n';
-  }
-
-  const checkoutPayload = {
-    billing_address: { ...billing },
-    shipping_address: { ...billing },
-    payment_method: paymentMethod === 'razorpay' ? 'cod' : paymentMethod,
-    payment_data: [],
-    customer_note: note.trim(),
-  };
-
-  let orderResult: any;
-  try {
-    const headers: any = {};
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-
-    const { data } = await fetchStoreApi<any>('checkout', tempToken, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(checkoutPayload),
-    }, nonce);
-    orderResult = data;
-  } finally {
-    // Step 4: Re-add the temporarily removed items back to the cart (best effort)
-    for (const item of itemsToRemove) {
-      try {
-        await fetchStoreApi<StoreCart>('cart/add-item', tempToken, {
-          method: 'POST',
-          body: JSON.stringify({
-            id: item.productId,
-            quantity: item.quantity,
-            ...(item.customData ? { item_data: item.customData } : {}),
-          }),
-        }, nonce);
-      } catch {
-        // Non-fatal: the order was placed successfully
-      }
-    }
-  }
-
-  return {
-    orderId: orderResult?.order_id,
-    orderKey: orderResult?.order_key,
-    paymentRedirectUrl: orderResult?.payment_result?.redirect_url || null,
-    status: orderResult?.status || 'pending',
-  };
+  void cartToken;
+  void billing;
+  void selectedItemKeys;
+  void allItems;
+  void paymentMethod;
+  void authToken;
+  throw new Error('Use placeOrderClient from src/lib/api/checkoutClient for browser-origin checkout calls.');
 }

@@ -1,17 +1,92 @@
+import crypto from 'node:crypto';
+
 export const API_URL = process.env.NEXT_PUBLIC_WC_API_URL;
 export const STORE_URL = process.env.NEXT_PUBLIC_WC_STORE_URL;
 
 const WC_KEY = process.env.WC_CONSUMER_KEY || '';
 const WC_SECRET = process.env.WC_CONSUMER_SECRET || '';
 
-function getAuthHeader(): Record<string, string> {
+function encodeRfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+function isHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function getAuthHeader(url: string): Record<string, string> {
   if (!WC_KEY || !WC_SECRET) return {};
+  if (!isHttpsUrl(url)) return {};
   // Using btoa for better compatibility across Node and Edge runtimes
   const auth = btoa(`${WC_KEY}:${WC_SECRET}`);
   return { Authorization: `Basic ${auth}` };
 }
 
-export async function wcFetch(endpoint: string, options?: RequestInit & { next?: { revalidate?: number; tags?: string[] } }) {
+function signOAuthUrl(rawUrl: string, method: string): string {
+  if (!WC_KEY || !WC_SECRET) return rawUrl;
+  if (isHttpsUrl(rawUrl)) return rawUrl;
+
+  const parsed = new URL(rawUrl);
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key: WC_KEY,
+    oauth_nonce: crypto.randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_version: '1.0',
+  };
+
+  const allParams: Array<[string, string]> = [];
+  parsed.searchParams.forEach((value, key) => {
+    allParams.push([key, value]);
+  });
+  Object.entries(oauthParams).forEach(([key, value]) => {
+    allParams.push([key, value]);
+  });
+
+  const normalized = allParams
+    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)] as const)
+    .sort((a, b) => {
+      if (a[0] === b[0]) {
+        return a[1].localeCompare(b[1]);
+      }
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+
+  parsed.search = '';
+  const baseUrl = parsed.toString();
+  const baseString = [
+    method.toUpperCase(),
+    encodeRfc3986(baseUrl),
+    encodeRfc3986(normalized),
+  ].join('&');
+
+  const signingKey = `${encodeRfc3986(WC_SECRET)}&`;
+  const signature = crypto
+    .createHmac('sha1', signingKey)
+    .update(baseString)
+    .digest('base64');
+
+  const signed = new URL(rawUrl);
+  Object.entries(oauthParams).forEach(([key, value]) => {
+    signed.searchParams.set(key, value);
+  });
+  signed.searchParams.set('oauth_signature', signature);
+
+  return signed.toString();
+}
+
+export async function wcFetchWithHeaders<T = unknown>(
+  endpoint: string,
+  options?: RequestInit & { next?: { revalidate?: number; tags?: string[] } }
+): Promise<{ data: T; headers: Headers }> {
   const cleanBaseUrl = API_URL?.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
   const isNoStore = options?.cache === 'no-store' || (!options?.next && !options?.cache);
   
@@ -20,27 +95,45 @@ export async function wcFetch(endpoint: string, options?: RequestInit & { next?:
     const separator = endpoint.includes('?') ? '&' : '?';
     url += `${separator}_cb=${Date.now()}`;
   }
+
+  const signedUrl = signOAuthUrl(url, options?.method || 'GET');
   
   const fetchOptions: RequestInit = {
     ...options,
     headers: {
-      ...getAuthHeader(),
+      Accept: 'application/json',
+      ...getAuthHeader(url),
       ...options?.headers,
     },
   };
+
+  const headers = new Headers(fetchOptions.headers);
+  if (options?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  fetchOptions.headers = headers;
 
   if (!options?.cache && !options?.next) {
     fetchOptions.cache = 'no-store';
   }
 
-  const res = await fetch(url, fetchOptions);
+  const res = await fetch(signedUrl, fetchOptions);
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "No error body");
     throw new Error(`WooCommerce API Error: ${res.status} ${res.statusText} at ${endpoint}. Body: ${errorBody}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  return { data, headers: res.headers };
+}
+
+export async function wcFetch<T = unknown>(
+  endpoint: string,
+  options?: RequestInit & { next?: { revalidate?: number; tags?: string[] } }
+): Promise<T> {
+  const { data } = await wcFetchWithHeaders<T>(endpoint, options);
+  return data;
 }
 
 
@@ -100,4 +193,3 @@ export async function fetchStoreApi<T>(
 
   return { data, cartToken: returnedCartToken, nonce: returnedNonce, headers: response.headers };
 }
-

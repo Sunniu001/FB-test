@@ -1,18 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Button } from '@/components/Button/Button';
 import { useCartStore } from '@/store/cartStore';
 import { useWishlistStore } from '@/store/wishlistStore';
 import { addToCart, updateCartItem } from '@/lib/api/cart';
-import { NormalizedProduct } from '@/types/product';
+import { Product } from '@/types/product';
 import { FrameSizeSelector } from '../FrameSizeSelector/FrameSizeSelector';
 import { NameplatePersonalizer, NameplateData } from '../NameplatePersonalizer/NameplatePersonalizer';
 import { WishlistModal } from '../WishlistModal/WishlistModal';
 import styles from './ProductActions.module.css';
 
 interface ProductActionsProps {
-  product: NormalizedProduct;
+  product: Product;
 }
 
 export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
@@ -21,9 +20,14 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
   const { cart, cartToken, setCart, setCartToken, setIsOpen } = useCartStore();
   const { isInAnyList } = useWishlistStore();
 
-  const isWished = isInAnyList(product.id);
-  const isWallpaper = product.isWallpaper;
-  const isNameplate = product.isNameplate;
+  const productId = String(product.id);
+  const isWished = isInAnyList(productId);
+  const isWallpaper = product.categories.some(
+    (category) => (category.slug || '').includes('wallpaper') || (category.name || '').toLowerCase().includes('wallpaper')
+  );
+  const isNameplate = product.categories.some(
+    (category) => (category.slug || '').includes('nameplate') || (category.name || '').toLowerCase().includes('nameplate')
+  );
 
   // Nameplate State
   const [nameplateData, setNameplateData] = useState<NameplateData>({
@@ -44,7 +48,7 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
   );
 
   // Pricing Logic
-  let basePrice = parseFloat(product.price.amount);
+  let basePrice = product.price;
   
   if (isVariable && selectedVariantId && product.variants) {
     const selectedVariant = product.variants.find(v => v.id === selectedVariantId);
@@ -97,6 +101,12 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
           'Material': selectedMaterial
         };
       }
+      if (selectedVariantId) {
+        customData = {
+          ...(customData || {}),
+          _variation_id: String(selectedVariantId),
+        };
+      }
       
       // For wallpapers, if the unit price is per sq ft, we need to send the total area as quantity 
       // if the backend isn't configured to calculate price from metadata.
@@ -105,7 +115,7 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
       // Cart Splitting Logic: For wallpapers, we treat different dimensions as separate items.
       // Use numeric parsing to ensure "5" and "5.00" match.
       const existingItem = isWallpaper ? cart?.items.find(item => {
-        if (item.productId !== product.id) return false;
+        if (item.productId !== productId) return false;
         
         // Normalize keys to lowercase for comparison
         const meta: Record<string, string> = {};
@@ -133,7 +143,7 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
         setIsOpen(true);
       } else {
         // Add as new line item (or first time)
-        const { cart: newCart, cartToken: newCartToken } = await addToCart(cartToken, product.id, finalQuantity, variationPayload, customData);
+        const { cart: newCart, cartToken: newCartToken } = await addToCart(cartToken, productId, finalQuantity, variationPayload, customData);
         setCart(newCart);
         setCartToken(newCartToken);
         setIsOpen(true);
@@ -189,7 +199,7 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
 
       {isNameplate && (
         <NameplatePersonalizer
-          productImage={product.nameplateMeta?.bg || product.images[0]?.url || ''}
+          productImage={product.nameplateMeta?.bg || product.images[0]?.src || ''}
           nameplateMeta={product.nameplateMeta}
           data={nameplateData}
           onChange={setNameplateData}
@@ -224,9 +234,9 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
         <button 
           className={styles.addToCartBtn} 
           onClick={handleAddToCart}
-          disabled={!product.availableForSale || isAdding || (isWallpaper && area < 25) || (isNameplate && !nameplateData.name.trim())}
+          disabled={product.stockStatus !== 'instock' || isAdding || (isWallpaper && area < 25) || (isNameplate && !nameplateData.name.trim())}
         >
-          {isAdding ? 'ADDING...' : product.availableForSale ? '🛒 ADD TO CART' : 'OUT OF STOCK'}
+          {isAdding ? 'ADDING...' : product.stockStatus === 'instock' ? '🛒 ADD TO CART' : 'OUT OF STOCK'}
         </button>
         <button 
           className={styles.wishlistBtn}
@@ -239,13 +249,13 @@ export const ProductActions: React.FC<ProductActionsProps> = ({ product }) => {
       {showWishlistModal && (
         <WishlistModal
           item={{
-            productId: product.id,
-            title: product.title,
-            handle: product.handle,
-            image: product.images[0]?.url || '',
-            price: product.price.amount,
-            currencyCode: product.price.currencyCode,
-            availableForSale: product.availableForSale,
+            productId,
+            title: product.name,
+            handle: product.slug,
+            image: product.images[0]?.src || '',
+            price: product.price.toString(),
+            currencyCode: 'INR',
+            availableForSale: product.stockStatus === 'instock',
           }}
           onClose={() => setShowWishlistModal(false)}
         />

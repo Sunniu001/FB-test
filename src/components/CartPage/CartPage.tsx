@@ -13,6 +13,7 @@ export const CartPage: React.FC = () => {
   const { 
     cart, 
     cartToken, 
+    cartLastSyncedAt,
     setCart, 
     setCartToken,
     isLoading, 
@@ -23,8 +24,11 @@ export const CartPage: React.FC = () => {
   } = useCartStore();
 
   useEffect(() => {
-    // Rehydrate cart on mount if we have a token but no cart data
-    if (cartToken && !cart) {
+    const shouldRevalidate =
+      cartToken &&
+      (!cart || !cartLastSyncedAt || (Date.now() - cartLastSyncedAt > 30_000));
+
+    if (shouldRevalidate) {
       const fetchCart = async () => {
         setIsLoading(true);
         try {
@@ -38,7 +42,7 @@ export const CartPage: React.FC = () => {
       };
       fetchCart();
     }
-  }, [cartToken, cart, setCart, setIsLoading]);
+  }, [cartToken, cart, cartLastSyncedAt, setCart, setIsLoading]);
 
   // Initially select all items if none are selected, or keep selection in sync
   useEffect(() => {

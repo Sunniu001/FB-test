@@ -1,7 +1,7 @@
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 import React from 'react';
-import { getProductBySlug, getProducts } from '@/lib/api/products';
+import { getProductBySlug } from '@/lib/api/products';
 import { ProductActions } from '@/components/ProductActions/ProductActions';
 import { ProductGallery } from '@/components/ProductGallery/ProductGallery';
 import Link from 'next/link';
@@ -11,13 +11,11 @@ import { SocialShare } from '@/components/SocialShare/SocialShare';
 import { ProductFeatures } from '@/components/ProductFeatures/ProductFeatures';
 import { notFound } from 'next/navigation';
 import styles from './page.module.css';
-import { Product, NormalizedProduct } from '@/types/product';
-
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;
   const product = await getProductBySlug(handle);
-  
+
   if (!product) {
     return {
       title: 'Product Not Found',
@@ -30,28 +28,6 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
   };
 }
 
-function mapToLegacyProduct(product: Product): NormalizedProduct {
-  return {
-    id: product.id.toString(),
-    handle: product.slug,
-    title: product.name,
-    description: product.description,
-    descriptionHtml: product.description,
-    price: {
-      amount: product.price.toString(),
-      currencyCode: 'INR',
-    },
-    availableForSale: product.stockStatus === 'instock',
-    images: product.images.map(img => ({ url: img.src, altText: img.alt })),
-    categories: product.categories.map(c => c.name),
-    isWallpaper: product.categories.some(c => (c.slug || '').includes('wallpaper') || (c.name || '').toLowerCase().includes('wallpaper')),
-    isNameplate: product.categories.some(c => (c.slug || '').includes('nameplate') || (c.name || '').toLowerCase().includes('nameplate')),
-    nameplateMeta: product.nameplateMeta,
-    attributes: product.attributes,
-    variants: product.variants,
-  };
-}
-
 export default async function ProductPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;
   const product = await getProductBySlug(handle);
@@ -60,7 +36,9 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
     notFound();
   }
 
-  const legacyProduct = mapToLegacyProduct(product);
+  const isWallpaper = product.categories.some(
+    (category) => (category.slug || '').includes('wallpaper') || (category.name || '').toLowerCase().includes('wallpaper')
+  );
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -81,33 +59,30 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
               <span className={styles.separator}>/</span>
             </>
           )}
-          <span className={styles.current}>{legacyProduct.title}</span>
+          <span className={styles.current}>{product.name}</span>
         </div>
 
         <div className={styles.container}>
           <div className={styles.galleryWrapper}>
-            <ProductGallery images={legacyProduct.images} />
+            <ProductGallery images={product.images.map((image) => ({ url: image.src, altText: image.alt }))} />
           </div>
-          
+
           <div className={styles.productInfo}>
-            <h1 className={styles.title}>{legacyProduct.title}</h1>
+            <h1 className={styles.title}>{product.name}</h1>
             <p className={styles.price}>
-              ₹{legacyProduct.price.amount} {legacyProduct.isWallpaper && <span className={styles.unit}>/sqft</span>}
+              ₹{product.price} {isWallpaper && <span className={styles.unit}>/sqft</span>}
             </p>
 
-
-            <ProductActions product={legacyProduct} />
+            <ProductActions product={product} />
           </div>
         </div>
-        
-        {/* Bottom Sections */}
-        <ProductAccordion 
-          description={legacyProduct.descriptionHtml || legacyProduct.description || ''} 
-          categories={legacyProduct.categories}
+
+        <ProductAccordion
+          description={product.description || ''}
+          categories={product.categories.map((category) => category.name)}
         />
         <SocialShare />
         <ProductFeatures />
-        
       </main>
     </div>
   );

@@ -1,11 +1,9 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import Credentials from 'next-auth/providers/credentials';
+import { wcFetch } from './api/client';
 
 const WP_URL = process.env.NEXT_PUBLIC_WP_URL || 'https://sunniy.com';
-const WC_API = process.env.NEXT_PUBLIC_WC_API_URL || 'https://sunniy.com/wp-json/wc/v3';
-const WC_KEY = process.env.WC_CONSUMER_KEY || '';
-const WC_SECRET = process.env.WC_CONSUMER_SECRET || '';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -37,13 +35,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           if (!jwtRes.ok) throw new Error(jwtData.message || 'Invalid credentials');
 
           // 2. Fetch WooCommerce customer data
-          const basicAuth = btoa(`${WC_KEY}:${WC_SECRET}`);
-          const custRes = await fetch(
-            `${WC_API}/customers?email=${encodeURIComponent(credentials.email as string)}&role=all`,
-            { headers: { Authorization: `Basic ${basicAuth}` } }
-          );
-          const custData = await custRes.json();
-          const customer = Array.isArray(custData) && custData[0] ? custData[0] : null;
+          let customer: any = null;
+          try {
+            const custData = await wcFetch<any[]>(
+              `customers?email=${encodeURIComponent(credentials.email as string)}&role=all`
+            );
+            customer = Array.isArray(custData) && custData[0] ? custData[0] : null;
+          } catch {
+            customer = null;
+          }
 
           // 3. Return a user object that NextAuth will store in the JWT
           return {
@@ -67,23 +67,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // For social logins, we still need the sync logic
       if (account?.provider === 'google') {
         try {
-          const basicAuth = btoa(`${WC_KEY}:${WC_SECRET}`);
-          const fetchOpts = { headers: { Authorization: `Basic ${basicAuth}`, 'Content-Type': 'application/json' } };
           const email = user.email!;
 
           // Find or create customer
-          const custRes = await fetch(`${WC_API}/customers?email=${encodeURIComponent(email)}&role=all`, fetchOpts);
-          const custData = await custRes.json();
+          const custData = await wcFetch<any[]>(`customers?email=${encodeURIComponent(email)}&role=all`);
           let customer = Array.isArray(custData) && custData[0] ? custData[0] : null;
 
-          let socialPassword = '';
+          let socialPassword: string | null = null;
           if (customer) {
             const meta = customer.meta_data?.find((m: any) => m.key === '_social_auth_pwd');
-            socialPassword = meta?.value || 'SocialLogin123!';
+            socialPassword = meta?.value || null;
           } else {
             socialPassword = Math.random().toString(36).slice(-10) + 'A1!';
-            const createRes = await fetch(`${WC_API}/customers`, {
-              ...fetchOpts,
+            customer = await wcFetch<any>('customers', {
               method: 'POST',
               body: JSON.stringify({
                 email,
@@ -93,43 +89,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 meta_data: [{ key: '_social_auth_pwd', value: socialPassword }]
               }),
             });
-            customer = await createRes.json();
           }
 
-          // Get JWT token for social user
-          let jwtRes = await fetch(`${WP_URL}/wp-json/jwt-auth/v1/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: email, password: socialPassword }),
-          });
-
-          // If JWT fails, the user might have a different password (traditional email user).
-          // We will update their password to the social one to link the accounts.
-          if (!jwtRes.ok && customer) {
-            await fetch(`${WC_API}/customers/${customer.id}`, {
-              ...fetchOpts,
-              method: 'PUT',
-              body: JSON.stringify({
-                password: socialPassword,
-                meta_data: [{ key: '_social_auth_pwd', value: socialPassword }]
-              }),
-            });
-
-            // Try JWT again with the updated password
-            jwtRes = await fetch(`${WP_URL}/wp-json/jwt-auth/v1/token`, {
+          if (socialPassword) {
+            const jwtRes = await fetch(`${WP_URL}/wp-json/jwt-auth/v1/token`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ username: email, password: socialPassword }),
             });
-          }
 
-          const jwtData = await jwtRes.json();
-
-          if (jwtRes.ok) {
-            (user as any).wpToken = jwtData.token;
-            (user as any).wpId = customer.id;
-            (user as any).wpFirstName = customer.first_name || user.name;
-            (user as any).wpLastName = customer.last_name || '';
+            const jwtData = await jwtRes.json();
+            if (jwtRes.ok) {
+              (user as any).wpToken = jwtData.token;
+              (user as any).wpId = customer.id;
+              (user as any).wpFirstName = customer.first_name || user.name;
+              (user as any).wpLastName = customer.last_name || '';
+            }
+          } else {
+            console.warn('Google sign-in matched existing customer without social link password; skipping WP JWT sync.');
           }
           return true;
         } catch (err) {

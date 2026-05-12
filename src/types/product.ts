@@ -71,6 +71,7 @@ export interface NormalizedProduct {
 export interface NormalizedCartItem {
   id: string; // The cart item key
   productId: string;
+  variationId?: number;
   quantity: number;
   title: string;
   image: string;
@@ -103,6 +104,9 @@ export interface NormalizedCart {
 export interface StoreCartItem {
   key: string;
   id: number;
+  product_id?: number;
+  variation?: Array<{ attribute: string; value: string }>;
+  variation_id?: number;
   quantity: number;
   name: string;
   short_description: string;

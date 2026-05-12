@@ -1,8 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { wcFetch } from '@/lib/api/client';
 
-const WC_API = process.env.NEXT_PUBLIC_WC_API_URL || 'https://sunniy.com/wp-json/wc/v3';
-const WC_KEY = process.env.WC_CONSUMER_KEY || '';
-const WC_SECRET = process.env.WC_CONSUMER_SECRET || '';
+function parseWooError(error: unknown): { message: string; code?: string; status: number } {
+  const fallback = {
+    message: 'Server error. Please try again.',
+    status: 500,
+  };
+
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  const message = error.message || '';
+  const bodyMatch = message.match(/Body:\s*(\{[\s\S]*\})$/);
+
+  if (bodyMatch) {
+    try {
+      const parsed = JSON.parse(bodyMatch[1]);
+      const code = typeof parsed?.code === 'string' ? parsed.code : undefined;
+      const parsedMessage = typeof parsed?.message === 'string' ? parsed.message : undefined;
+      const status = typeof parsed?.data?.status === 'number' ? parsed.data.status : 500;
+
+      return {
+        message: (parsedMessage || 'Registration failed').replace(/<[^>]+>/g, ''),
+        code,
+        status,
+      };
+    } catch {
+      // Fall through to generic handler.
+    }
+  }
+
+  return {
+    message: message.replace(/<[^>]+>/g, '') || fallback.message,
+    status: 500,
+  };
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,14 +45,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'All fields are required.' }, { status: 400 });
     }
 
-    const basicAuth = Buffer.from(`${WC_KEY}:${WC_SECRET}`).toString('base64');
-
-    const res = await fetch(`${WC_API}/customers`, {
+    const data = await wcFetch<{ id: number; email: string }>('customers', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${basicAuth}`,
-      },
       body: JSON.stringify({
         first_name: firstName,
         last_name: lastName,
@@ -29,17 +56,12 @@ export async function POST(req: NextRequest) {
       }),
     });
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      console.error('[register] WooCommerce Error:', data);
-      const message = data?.message?.replace(/<[^>]+>/g, '') || `WC Error: ${res.status}`;
-      return NextResponse.json({ message, code: data?.code }, { status: res.status });
-    }
-
     return NextResponse.json({ id: data.id, email: data.email });
-  } catch (err: any) {
-    console.error('[register] Error:', err);
-    return NextResponse.json({ message: 'Server error. Please try again.' }, { status: 500 });
+  } catch (err: unknown) {
+    const parsed = parseWooError(err);
+    return NextResponse.json(
+      { message: parsed.message, code: parsed.code },
+      { status: parsed.status }
+    );
   }
 }

@@ -5,6 +5,7 @@ import { NormalizedCart } from '@/types/product';
 interface CartState {
   cart: NormalizedCart | null;
   cartToken: string | null;
+  cartLastSyncedAt: number | null;
   isOpen: boolean;
   isLoading: boolean;
   selectedItemIds: string[];
@@ -24,11 +25,12 @@ export const useCartStore = create<CartState>()(
     (set) => ({
       cart: null,
       cartToken: null,
+      cartLastSyncedAt: null,
       isOpen: false,
       isLoading: false,
       selectedItemIds: [],
 
-      setCart: (cart) => set({ cart }),
+      setCart: (cart) => set({ cart, cartLastSyncedAt: Date.now() }),
       setCartToken: (cartToken) => set({ cartToken }),
       setIsOpen: (isOpen) => set({ isOpen }),
       setIsLoading: (isLoading) => set({ isLoading }),
@@ -45,9 +47,11 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'cart-storage',
-      // We persist both the token and the selected items
+      // Persist token, cart snapshot, and selection for fast hydration.
       partialize: (state) => ({ 
         cartToken: state.cartToken,
+        cart: state.cart,
+        cartLastSyncedAt: state.cartLastSyncedAt,
         selectedItemIds: state.selectedItemIds 
       }),
     }
